@@ -19,6 +19,7 @@ import { TimeEntry } from '../types';
 import { getTodayStr, formatBnNumber, formatBnDate } from '../utils/storage';
 import {
   playSuccessChime,
+  playJoyfulSessionEndAlarm,
   playClockTick,
   playDigitalTimerTick,
   speakFocusVoiceReminder,
@@ -28,6 +29,7 @@ import {
   unlockAudio,
   onSpeechStateChange,
 } from '../utils/audio';
+import { fireConfetti } from '../utils/confetti';
 import { screenWakeLock } from '../utils/wakeLock';
 
 interface TimeAnalysisViewProps {
@@ -175,9 +177,15 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
   useEffect(() => {
     if (timerActive && timerSeconds === 0) {
       setTimerActive(false);
-      playSuccessChime();
+      // 1. Play the joyful celebration ending alarm immediately (আনন্দের সহিত এনডিং অ্যালার্ম)
+      playJoyfulSessionEndAlarm();
+      // 2. Joyful celebration confetti visual
+      fireConfetti();
+      // 3. Spoken congratulatory voice plays seamlessly after the joyful opening bell fanfare
       if (isVoiceReminderRef.current) {
-        speakFocusSessionComplete();
+        setTimeout(() => {
+          speakFocusSessionComplete();
+        }, 850);
       }
       const minutesDone = Math.max(1, Math.round(initialSeconds / 60));
       onAddTimeEntry({

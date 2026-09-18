@@ -1,11 +1,11 @@
 {
-  "name": "react-example",
+  "name": "time-management",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && cp dist/script.js ./script.js && cp dist/style.css ./style.css && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && cp dist/script.js ./script.js && cp dist/style.css ./style.css && cp -r public/audio ./audio && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",

@@ -132,6 +132,7 @@ app.get("/api/tts/focus-reminder", async (req, res) => {
     }
 
     // Synthesize dynamically with Pradeep Neural male voice and natural pauses
+    // Script: “আর মাত্র [X] মিনিট বাকি আছে... কাজে ফোকাস রাখুন।”
     const bnMinutes = getBnWord(validMinutes);
     const tts = new MsEdgeTTS();
     await tts.setMetadata("bn-BD-PradeepNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
@@ -139,35 +140,28 @@ app.get("/api/tts/focus-reminder", async (req, res) => {
     const tmpId = Date.now() + "_" + Math.random().toString(36).slice(2, 6);
     const p1File = `/tmp/rem_p1_${tmpId}.mp3`;
     const p2File = `/tmp/rem_p2_${tmpId}.mp3`;
-    const p3File = `/tmp/rem_p3_${tmpId}.mp3`;
 
-    await tts.toFile("/tmp", "মনোযোগ হারাবেন না, কিন্তু।", { rate: "-3%", pitch: "+0Hz" });
+    // Part 1: Warm human reminder - gentle tone with clear inflection on remaining time
+    await tts.toFile("/tmp", `আর মাত্র ${bnMinutes} মিনিট বাকি আছে,`, { rate: "-3%", pitch: "+1Hz" });
     fs.renameSync("/tmp/audio.mp3", p1File);
 
-    await tts.toFile("/tmp", "কাজে ফোকাস রাখুন,", { rate: "-3%", pitch: "-1Hz" });
+    // Part 2: Calm, inspiring focus prompt - steady and reassuring
+    await tts.toFile("/tmp", "কাজে ফোকাস রাখুন।", { rate: "-4%", pitch: "-1Hz" });
     fs.renameSync("/tmp/audio.mp3", p2File);
-
-    await tts.toFile("/tmp", `আর মাত্র ${bnMinutes} মিনিট বাকি আছে।`, { rate: "-3%", pitch: "+0Hz" });
-    fs.renameSync("/tmp/audio.mp3", p3File);
 
     tts.close();
 
-    const sil1 = "/tmp/rem_sil1.mp3";
-    const sil2 = "/tmp/rem_sil2.mp3";
+    const sil1 = "/tmp/rem_sil_breath.mp3";
     if (!fs.existsSync(sil1)) {
-      execSync("ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t 0.35 -b:a 48k /tmp/rem_sil1.mp3");
-    }
-    if (!fs.existsSync(sil2)) {
-      execSync("ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t 0.35 -b:a 48k /tmp/rem_sil2.mp3");
+      execSync("ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t 0.38 -b:a 48k /tmp/rem_sil_breath.mp3");
     }
 
-    const cmd = `ffmpeg -y -i ${p1File} -i ${sil1} -i ${p2File} -i ${sil2} -i ${p3File} -filter_complex "[0:a][1:a][2:a][3:a][4:a]concat=n=5:v=0:a=1[outa]" -map "[outa]" -c:a libmp3lame -b:a 48k -ar 24000 ${targetFile}`;
+    const cmd = `ffmpeg -y -i ${p1File} -i ${sil1} -i ${p2File} -filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[outa]" -map "[outa]" -c:a libmp3lame -b:a 48k -ar 24000 ${targetFile}`;
     execSync(cmd);
 
     try {
       fs.unlinkSync(p1File);
       fs.unlinkSync(p2File);
-      fs.unlinkSync(p3File);
     } catch (e) {}
 
     res.setHeader("Content-Type", "audio/mpeg");

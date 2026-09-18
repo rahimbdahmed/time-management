@@ -71,6 +71,61 @@ export function playSuccessChime(): void {
   setTimeout(() => playTone(783.99, 0.25, 'sine', 0.2), 180); // G5
 }
 
+// Joyful, uplifting celebration ending alarm when focus session completes (আনন্দের সহিত এনডিং অ্যালার্ম)
+export function playJoyfulSessionEndAlarm(): void {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+
+    const now = ctx.currentTime;
+
+    // Celebratory ascending bell fanfare:
+    // C5 (523.25) -> E5 (659.25) -> G5 (783.99) -> C6 (1046.50) -> E6 (1318.51) -> G6 (1567.98)
+    // followed by a glorious, sustained C-Major triumph chord with crystal shimmer decay
+    const notes: Array<{ freq: number; time: number; dur: number; gain: number; type: OscillatorType }> = [
+      { freq: 523.25, time: 0.00, dur: 0.28, gain: 0.24, type: 'triangle' }, // C5
+      { freq: 659.25, time: 0.13, dur: 0.28, gain: 0.25, type: 'triangle' }, // E5
+      { freq: 783.99, time: 0.26, dur: 0.32, gain: 0.26, type: 'sine' },     // G5
+      { freq: 1046.50, time: 0.39, dur: 0.40, gain: 0.28, type: 'sine' },    // C6
+      { freq: 1318.51, time: 0.54, dur: 0.50, gain: 0.30, type: 'triangle' },// E6
+      // Sparkling double-bell peak
+      { freq: 1567.98, time: 0.70, dur: 0.75, gain: 0.28, type: 'sine' },    // G6
+      { freq: 2093.00, time: 0.70, dur: 0.65, gain: 0.15, type: 'sine' },    // C7 sparkle
+      // Triumphant, warm sustaining celebratory chord
+      { freq: 261.63, time: 0.88, dur: 1.80, gain: 0.20, type: 'sine' },     // C4 root body
+      { freq: 523.25, time: 0.88, dur: 1.80, gain: 0.22, type: 'triangle' }, // C5
+      { freq: 659.25, time: 0.88, dur: 1.80, gain: 0.20, type: 'sine' },     // E5
+      { freq: 783.99, time: 0.88, dur: 1.80, gain: 0.22, type: 'sine' },     // G5
+      { freq: 1046.50, time: 0.88, dur: 2.10, gain: 0.26, type: 'sine' },    // C6 crystal bell
+      { freq: 1318.51, time: 0.90, dur: 1.60, gain: 0.18, type: 'sine' },    // E6 shimmer
+    ];
+
+    notes.forEach((n) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = n.type;
+      osc.frequency.setValueAtTime(n.freq, now + n.time);
+
+      gain.gain.setValueAtTime(0.0001, now + n.time);
+      // Fast strike attack for bright metallic bell strike
+      gain.gain.exponentialRampToValueAtTime(n.gain, now + n.time + 0.015);
+      // Musical smooth resonant bell decay
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.time + n.dur);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + n.time);
+      osc.stop(now + n.time + n.dur + 0.05);
+    });
+  } catch (e) {
+    // Silent fail
+  }
+}
+
 // Alarm Chime for Reminders
 export function playAlertChime(): void {
   playTone(880, 0.2, 'square', 0.2); // A5
@@ -529,7 +584,7 @@ export function speakFocusSessionComplete(onComplete?: () => void): void {
 const reminderBufferCache = new Map<number, AudioBuffer>();
 
 // Male voice motivational reminder in Bengali during active focus (Pradeep Neural - Bangladesh)
-// Script: “কাজে ফোকাস রাখুন, আর মাত্র [X] মিনিট আছে।” (or minutes and seconds)
+// Script: “আর মাত্র [X] মিনিট বাকি আছে, কাজে ফোকাস রাখুন।” (or minutes and seconds)
 export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: () => void): void {
   if (remainingSeconds <= 0) {
     speakFocusSessionComplete(onComplete);
@@ -542,14 +597,14 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
   let sentence = '';
   if (mins > 0 && secs === 0) {
     const minText = getBengaliMinutesText(mins);
-    sentence = `কাজে ফোকাস রাখুন, আর মাত্র ${minText} মিনিট আছে।`;
+    sentence = `আর মাত্র ${minText} মিনিট বাকি আছে, কাজে ফোকাস রাখুন।`;
   } else if (mins > 0 && secs > 0) {
     const minText = getBengaliMinutesText(mins);
     const secText = getBengaliMinutesText(secs);
-    sentence = `কাজে ফোকাস রাখুন, আর মাত্র ${minText} মিনিট ${secText} সেকেন্ড আছে।`;
+    sentence = `আর মাত্র ${minText} মিনিট ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`;
   } else {
     const secText = getBengaliMinutesText(secs);
-    sentence = `কাজে ফোকাস রাখুন, আর মাত্র ${secText} সেকেন্ড আছে।`;
+    sentence = `আর মাত্র ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`;
   }
 
   let hasFinished = false;
