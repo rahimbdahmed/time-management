@@ -596,12 +596,36 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
 
   let sentence = '';
   if (mins > 0 && secs === 0) {
-    const minText = getBengaliMinutesText(mins);
-    sentence = `আর মাত্র ${minText} মিনিট বাকি আছে, কাজে ফোকাস রাখুন।`;
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      if (remainingMins === 0) {
+        const hrText = getBengaliMinutesText(hours);
+        sentence = `আর মাত্র ${hrText} ঘণ্টা বাকি আছে, কাজে ফোকাস রাখুন।`;
+      } else {
+        const hrText = getBengaliMinutesText(hours);
+        const minText = getBengaliMinutesText(remainingMins);
+        sentence = `আর মাত্র ${hrText} ঘণ্টা ${minText} মিনিট বাকি আছে, কাজে ফোকাস রাখুন।`;
+      }
+    } else {
+      const minText = getBengaliMinutesText(mins);
+      sentence = `আর মাত্র ${minText} মিনিট বাকি আছে, কাজে ফোকাস রাখুন।`;
+    }
   } else if (mins > 0 && secs > 0) {
-    const minText = getBengaliMinutesText(mins);
-    const secText = getBengaliMinutesText(secs);
-    sentence = `আর মাত্র ${minText} মিনিট ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`;
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      const hrText = getBengaliMinutesText(hours);
+      const minText = getBengaliMinutesText(remainingMins);
+      const secText = getBengaliMinutesText(secs);
+      sentence = remainingMins > 0
+        ? `আর মাত্র ${hrText} ঘণ্টা ${minText} মিনিট ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`
+        : `আর মাত্র ${hrText} ঘণ্টা ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`;
+    } else {
+      const minText = getBengaliMinutesText(mins);
+      const secText = getBengaliMinutesText(secs);
+      sentence = `আর মাত্র ${minText} মিনিট ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`;
+    }
   } else {
     const secText = getBengaliMinutesText(secs);
     sentence = `আর মাত্র ${secText} সেকেন্ড বাকি আছে, কাজে ফোকাস রাখুন।`;
@@ -632,8 +656,8 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
   try {
     stopVoice();
 
-    // 1. For exact minute milestones (1-60 mins), attempt playing Pradeep Neural audio via unlocked AudioContext
-    if (mins >= 1 && mins <= 60 && secs === 0) {
+    // 1. For exact minute milestones (1-120 mins), attempt playing Pradeep Neural audio via unlocked AudioContext
+    if (mins >= 1 && mins <= 120 && secs === 0) {
       const audioUrl = typeof window !== 'undefined' && window.location.protocol === 'file:'
         ? `./audio/rem_${mins}.mp3`
         : `/audio/rem_${mins}.mp3`;
@@ -687,7 +711,7 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
   }
 
   function fallbackHtmlAudioOrTTS() {
-    if (mins >= 1 && mins <= 60 && secs === 0) {
+    if (mins >= 1 && mins <= 120 && secs === 0) {
       try {
         const audioUrl = typeof window !== 'undefined' && window.location.protocol === 'file:'
           ? `./audio/rem_${mins}.mp3`

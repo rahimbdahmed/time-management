@@ -121,9 +121,7 @@ app.get("/api/tts/focus-reminder", async (req, res) => {
   try {
     const minutes = parseInt(String(req.query.minutes || "5"), 10);
     const validMinutes = isNaN(minutes) || minutes < 1 ? 5 : minutes;
-    const remFile = path.join(publicAudioDir, `rem_${validMinutes}.mp3`);
-    const legacyTargetFile = path.join(publicAudioDir, `reminder_${validMinutes}.mp3`);
-    const targetFile = fs.existsSync(remFile) ? remFile : legacyTargetFile;
+    const targetFile = path.join(publicAudioDir, `rem_${validMinutes}.mp3`);
 
     if (fs.existsSync(targetFile)) {
       res.setHeader("Content-Type", "audio/mpeg");
