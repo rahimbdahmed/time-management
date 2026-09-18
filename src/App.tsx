@@ -1051,13 +1051,13 @@ export const App: React.FC = () => {
           />
         )}
 
-        {activeTab === 'time-analysis' && (
+        <div id="time-analysis-view-container" className={activeTab === 'time-analysis' ? 'block' : 'hidden'}>
           <TimeAnalysisView
             timeEntries={data.timeEntries}
             onAddTimeEntry={handleAddTimeEntry}
             onDeleteTimeEntry={handleDeleteTimeEntry}
           />
-        )}
+        </div>
 
         {(activeTab === 'yearly' || activeTab === 'roadmap') && (
           <YearlyPlannerView
