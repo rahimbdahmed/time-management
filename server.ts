@@ -129,38 +129,30 @@ app.get("/api/tts/focus-reminder", async (req, res) => {
       return res.sendFile(targetFile);
     }
 
-    // Synthesize dynamically with Pradeep Neural male voice and natural pauses
-    // Script: “আর মাত্র [X] মিনিট বাকি আছে... কাজে ফোকাস রাখুন।”
-    const bnMinutes = getBnWord(validMinutes);
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata("bn-BD-PradeepNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-
-    const tmpId = Date.now() + "_" + Math.random().toString(36).slice(2, 6);
-    const p1File = `/tmp/rem_p1_${tmpId}.mp3`;
-    const p2File = `/tmp/rem_p2_${tmpId}.mp3`;
-
-    // Part 1: Warm human reminder - gentle tone with clear inflection on remaining time
-    await tts.toFile("/tmp", `আর মাত্র ${bnMinutes} মিনিট বাকি আছে,`, { rate: "-3%", pitch: "+1Hz" });
-    fs.renameSync("/tmp/audio.mp3", p1File);
-
-    // Part 2: Calm, inspiring focus prompt - steady and reassuring
-    await tts.toFile("/tmp", "কাজে ফোকাস রাখুন।", { rate: "-4%", pitch: "-1Hz" });
-    fs.renameSync("/tmp/audio.mp3", p2File);
-
-    tts.close();
-
-    const sil1 = "/tmp/rem_sil_breath.mp3";
-    if (!fs.existsSync(sil1)) {
-      execSync("ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t 0.38 -b:a 48k /tmp/rem_sil_breath.mp3");
+    // Synthesize dynamically with Pradeep Neural male voice (natural cadence, 96kbps)
+    let sentence = "";
+    if (validMinutes === 60) {
+      sentence = "আর মাত্র এক ঘণ্টা বাকি আছে, কাজে ফোকাস রাখুন।";
+    } else if (validMinutes === 120) {
+      sentence = "আর মাত্র দুই ঘণ্টা বাকি আছে, কাজে ফোকাস রাখুন।";
+    } else if (validMinutes > 60) {
+      const hrs = Math.floor(validMinutes / 60);
+      const rem = validMinutes % 60;
+      const hrWord = getBnWord(hrs);
+      const remWord = getBnWord(rem);
+      sentence = rem > 0
+        ? `আর মাত্র ${hrWord} ঘণ্টা ${remWord} মিনিট বাকি আছে, কাজে ফোকাস রাখুন।`
+        : `আর মাত্র ${hrWord} ঘণ্টা বাকি আছে, কাজে ফোকাস রাখুন।`;
+    } else {
+      const bnMinutes = getBnWord(validMinutes);
+      sentence = `আর মাত্র ${bnMinutes} মিনিট বাকি আছে, কাজে ফোকাস রাখুন।`;
     }
 
-    const cmd = `ffmpeg -y -i ${p1File} -i ${sil1} -i ${p2File} -filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[outa]" -map "[outa]" -c:a libmp3lame -b:a 48k -ar 24000 ${targetFile}`;
-    execSync(cmd);
-
-    try {
-      fs.unlinkSync(p1File);
-      fs.unlinkSync(p2File);
-    } catch (e) {}
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata("bn-BD-PradeepNeural", OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    await tts.toFile(publicAudioDir, sentence);
+    fs.renameSync(path.join(publicAudioDir, "audio.mp3"), targetFile);
+    tts.close();
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
