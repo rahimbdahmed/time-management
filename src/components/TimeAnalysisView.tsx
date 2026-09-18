@@ -32,6 +32,8 @@ import {
 import { fireConfetti } from '../utils/confetti';
 import { screenWakeLock } from '../utils/wakeLock';
 
+import { focusTimer, FocusTimerState } from '../utils/focusTimer';
+
 interface TimeAnalysisViewProps {
   timeEntries: TimeEntry[];
   onAddTimeEntry: (entry: Omit<TimeEntry, 'id'>) => void;
@@ -45,20 +47,32 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
 }) => {
   const todayStr = getTodayStr();
 
-  // 1. Pomodoro Focus Timer State
-  const [timerSeconds, setTimerSeconds] = useState(30 * 60);
-  const [initialSeconds, setInitialSeconds] = useState(30 * 60);
-  const [timerActive, setTimerActive] = useState(false);
-  const [timerTaskName, setTimerTaskName] = useState('ডিপ ফোকাস সেশন');
+  // 1. Pomodoro Focus Timer State synchronized from global focusTimer manager
+  const [timerState, setTimerState] = useState<FocusTimerState>(() => focusTimer.getState());
   const [customMinutes, setCustomMinutes] = useState('');
-  const [isTickSoundEnabled, setIsTickSoundEnabled] = useState(true);
-  const [timerSoundType, setTimerSoundType] = useState<'digital' | 'mechanical'>('digital');
-  const [isVoiceReminderEnabled, setIsVoiceReminderEnabled] = useState(true);
   const [voiceSpeakingText, setVoiceSpeakingText] = useState('');
-  const [isGreetingActive, setIsGreetingActive] = useState(false);
-  const [isSpeakingReminder, setIsSpeakingReminder] = useState(false);
 
-  // Subscribe to voice state for live speaking notification/subtitle
+  // Subscribe to global timer singleton
+  useEffect(() => {
+    // Keep complete handler connected
+    focusTimer.setOnComplete((durationMinutes, taskName) => {
+      onAddTimeEntry({
+        date: todayStr,
+        startTime: new Date().toTimeString().substring(0, 5),
+        durationMinutes,
+        type: 'productive',
+        activity: taskName || 'পমোডোরো ফোকাস সম্পন্ন',
+        category: 'ফোকাস সেশন',
+      });
+    });
+
+    const unsubscribe = focusTimer.subscribe((state) => {
+      setTimerState(state);
+    });
+    return unsubscribe;
+  }, [todayStr, onAddTimeEntry]);
+
+  // Subscribe to voice state for live speaking subtitle
   useEffect(() => {
     const unsubscribe = onSpeechStateChange((speaking, text) => {
       setVoiceSpeakingText(speaking ? text : '');
@@ -66,35 +80,15 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
     return unsubscribe;
   }, []);
 
-  // References to keep mutable values fresh inside long-running interval without recreating it every second
-  const isTickSoundRef = useRef(isTickSoundEnabled);
-  const timerSoundTypeRef = useRef(timerSoundType);
-  const isVoiceReminderRef = useRef(isVoiceReminderEnabled);
-  const initialSecondsRef = useRef(initialSeconds);
-  const isGreetingActiveRef = useRef(isGreetingActive);
-  const isSpeakingReminderRef = useRef(false);
-  const elapsedWorkSecondsRef = useRef<number>(0);
-  const lastSpokenSecRef = useRef<number>(-1);
-
-  useEffect(() => {
-    isTickSoundRef.current = isTickSoundEnabled;
-  }, [isTickSoundEnabled]);
-
-  useEffect(() => {
-    timerSoundTypeRef.current = timerSoundType;
-  }, [timerSoundType]);
-
-  useEffect(() => {
-    isVoiceReminderRef.current = isVoiceReminderEnabled;
-  }, [isVoiceReminderEnabled]);
-
-  useEffect(() => {
-    initialSecondsRef.current = initialSeconds;
-  }, [initialSeconds]);
-
-  useEffect(() => {
-    isGreetingActiveRef.current = isGreetingActive;
-  }, [isGreetingActive]);
+  const timerSeconds = timerState.seconds;
+  const initialSeconds = timerState.initialSeconds;
+  const timerActive = timerState.active;
+  const timerTaskName = timerState.taskName;
+  const isTickSoundEnabled = timerState.isTickSoundEnabled;
+  const timerSoundType = timerState.timerSoundType;
+  const isVoiceReminderEnabled = timerState.isVoiceReminderEnabled;
+  const isGreetingActive = timerState.isGreetingActive;
+  const isSpeakingReminder = timerState.isSpeakingReminder;
 
   // 2. Manual Time Entry Form State
   const [activity, setActivity] = useState('');
@@ -103,187 +97,29 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
   const [category, setCategory] = useState('কাজ');
   const [notes, setNotes] = useState('');
 
-  // Continuous, 10+ Hour Robust Timer Loop (never destroyed and recreated on each second)
-  useEffect(() => {
-    if (!timerActive) return;
-
-    // Unlock Web Audio singleton on start
-    unlockAudio();
-
-    const interval = setInterval(() => {
-      // If voice reminder is speaking OR greeting is active, FREEZE/OFF the countdown timer and NO tick
-      if (isSpeakingReminderRef.current || isGreetingActiveRef.current) {
-        return;
-      }
-
-      setTimerSeconds((prev) => {
-        if (prev <= 1) {
-          return 0;
-        }
-
-        // Increment actual countdown work seconds
-        elapsedWorkSecondsRef.current += 1;
-        const nextSec = prev - 1;
-
-        // 1. Rock-solid Clock Tick (Digital crystal beep or Mechanical tick-tock)
-        // STRICT: Ticking sound ONLY plays while timer is actively running and not speaking or greeting!
-        if (
-          isTickSoundRef.current &&
-          !isSpeakingReminderRef.current &&
-          !isGreetingActiveRef.current &&
-          nextSec > 0
-        ) {
-          if (timerSoundTypeRef.current === 'digital') {
-            playDigitalTimerTick(nextSec % 2 === 0);
-          } else {
-            playClockTick(nextSec % 2 === 0);
-          }
-        }
-
-        // 2. Clear Natural Male Bengali Voice Reminder every 5 minutes (300s of active work):
-        // Automatically calculates remaining time and freezes countdown while voice speaks
-        const is5MinElapsed = elapsedWorkSecondsRef.current > 0 && elapsedWorkSecondsRef.current % 300 === 0;
-        const isMilestone5Min = nextSec > 0 && nextSec % 300 === 0 && nextSec !== initialSecondsRef.current;
-
-        if (
-          isVoiceReminderRef.current &&
-          nextSec > 0 &&
-          (is5MinElapsed || isMilestone5Min) &&
-          lastSpokenSecRef.current !== nextSec
-        ) {
-          lastSpokenSecRef.current = nextSec;
-
-          // FREEZE TIMER: Turn countdown off while speaking
-          isSpeakingReminderRef.current = true;
-          setIsSpeakingReminder(true);
-
-          speakFocusVoiceReminder(nextSec, () => {
-            // RESUME TIMER: Speech finished -> resume countdown
-            isSpeakingReminderRef.current = false;
-            setIsSpeakingReminder(false);
-          });
-        }
-
-        return nextSec;
-      });
-    }, 1000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [timerActive]);
-
-  // Handle Session Completion cleanly in an effect, avoiding setState inside render
-  useEffect(() => {
-    if (timerActive && timerSeconds === 0) {
-      setTimerActive(false);
-      // 1. Play the joyful celebration ending alarm immediately (আনন্দের সহিত এনডিং অ্যালার্ম)
-      playJoyfulSessionEndAlarm();
-      // 2. Joyful celebration confetti visual
-      fireConfetti();
-      // 3. Spoken congratulatory voice plays seamlessly after the joyful opening bell fanfare
-      if (isVoiceReminderRef.current) {
-        setTimeout(() => {
-          speakFocusSessionComplete();
-        }, 850);
-      }
-      const minutesDone = Math.max(1, Math.round(initialSeconds / 60));
-      onAddTimeEntry({
-        date: todayStr,
-        startTime: new Date().toTimeString().substring(0, 5),
-        durationMinutes: minutesDone,
-        type: 'productive',
-        activity: timerTaskName || 'পমোডোরো ফোকাস সম্পন্ন',
-        category: 'ফোকাস সেশন',
-      });
-    }
-  }, [timerActive, timerSeconds, initialSeconds, timerTaskName, todayStr, onAddTimeEntry]);
-
-  // Keep device screen awake (prevent sleep / backlight turn off) while focus timer is running
-  useEffect(() => {
-    if (timerActive || isGreetingActive) {
-      screenWakeLock.acquire().catch(() => {});
-
-      const handleVisibility = () => {
-        screenWakeLock.handleVisibilityChange();
-      };
-      document.addEventListener('visibilitychange', handleVisibility);
-
-      return () => {
-        document.removeEventListener('visibilitychange', handleVisibility);
-        screenWakeLock.release();
-      };
-    } else {
-      screenWakeLock.release();
-    }
-  }, [timerActive, isGreetingActive]);
-
   const handleStartTimer = () => {
-    // Acquire wake lock and prime audio hardware immediately on user touch/click
-    screenWakeLock.acquire().catch(() => {});
-    unlockAudio();
-    if (timerSeconds === initialSeconds) {
-      elapsedWorkSecondsRef.current = 0;
-      lastSpokenSecRef.current = -1;
-    }
-    isSpeakingReminderRef.current = false;
-    setIsSpeakingReminder(false);
+    focusTimer.start();
+  };
 
-    if (isVoiceReminderEnabled) {
-      setIsGreetingActive(true);
-      speakFocusSessionStart(() => {
-        setIsGreetingActive(false);
-        setTimerActive(true);
-      });
-    } else {
-      setTimerActive(true);
-    }
-  };
   const handlePauseTimer = () => {
-    screenWakeLock.release();
-    stopVoice();
-    setIsGreetingActive(false);
-    isSpeakingReminderRef.current = false;
-    setIsSpeakingReminder(false);
-    setTimerActive(false);
+    focusTimer.pause();
   };
+
   const handleResetTimer = (mins: number) => {
-    screenWakeLock.release();
-    stopVoice();
-    setIsGreetingActive(false);
-    isSpeakingReminderRef.current = false;
-    setIsSpeakingReminder(false);
-    setTimerActive(false);
-    elapsedWorkSecondsRef.current = 0;
-    lastSpokenSecRef.current = -1;
-    setInitialSeconds(mins * 60);
-    setTimerSeconds(mins * 60);
+    setCustomMinutes('');
+    focusTimer.reset(mins);
   };
 
   const handleResetButtonClick = () => {
-    screenWakeLock.release();
-    stopVoice();
-    setIsGreetingActive(false);
-    isSpeakingReminderRef.current = false;
-    setIsSpeakingReminder(false);
-    setTimerActive(false);
-    elapsedWorkSecondsRef.current = 0;
-    lastSpokenSecRef.current = -1;
-    // If the timer was running or partially elapsed, reset to the current session start
-    if (timerSeconds !== initialSeconds) {
-      setTimerSeconds(initialSeconds);
-    } else {
-      // If already at the start, reset to the default 30 mins and clear custom minutes input
-      setCustomMinutes('');
-      setInitialSeconds(30 * 60);
-      setTimerSeconds(30 * 60);
-    }
+    setCustomMinutes('');
+    focusTimer.reset();
   };
 
   const handleApplyCustomMinutes = () => {
     const mins = parseInt(customMinutes, 10);
     if (!isNaN(mins) && mins > 0) {
-      handleResetTimer(mins);
+      focusTimer.reset(mins);
+      setCustomMinutes('');
     }
   };
 
@@ -422,7 +258,7 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
               <input
                 type="text"
                 value={timerTaskName}
-                onChange={(e) => setTimerTaskName(e.target.value)}
+                onChange={(e) => focusTimer.setTaskName(e.target.value)}
                 placeholder="বর্তমান কাজের নাম..."
                 className="w-full text-center text-xs bg-white border border-slate-300 rounded-lg py-2 px-3 text-black placeholder:text-slate-500 mb-2.5 focus:outline-none focus:border-[#005B96] font-semibold"
               />
@@ -473,7 +309,7 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setIsTickSoundEnabled(!isTickSoundEnabled)}
+                  onClick={() => focusTimer.toggleTickSound()}
                   className={`py-2 px-2.5 rounded-xl transition-all cursor-pointer shadow-xs border flex items-center justify-center gap-1.5 ${
                     isTickSoundEnabled
                       ? 'bg-white/25 hover:bg-white/35 text-amber-300 border-amber-300/40'
@@ -493,15 +329,7 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    const nextState = !isVoiceReminderEnabled;
-                    setIsVoiceReminderEnabled(nextState);
-                    if (nextState) {
-                      speakFocusSessionStart();
-                    } else {
-                      stopVoice();
-                    }
-                  }}
+                  onClick={() => focusTimer.toggleVoiceReminder()}
                   className={`py-2 px-2.5 rounded-xl transition-all cursor-pointer shadow-xs border flex items-center justify-center gap-1.5 ${
                     isVoiceReminderEnabled
                       ? 'bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-300 border-emerald-300/40'
@@ -527,7 +355,7 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setTimerSoundType('digital');
+                    focusTimer.setSoundType('digital');
                     unlockAudio();
                     playDigitalTimerTick(false);
                   }}
@@ -543,7 +371,7 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setTimerSoundType('mechanical');
+                    focusTimer.setSoundType('mechanical');
                     unlockAudio();
                     playClockTick(false);
                   }}
@@ -564,15 +392,7 @@ export const TimeAnalysisView: React.FC<TimeAnalysisViewProps> = ({
               <span className="text-[11px] text-slate-300 font-medium shrink-0">৫ মিনিট রিমাইন্ডার:</span>
               <button
                 type="button"
-                onClick={() => {
-                  unlockAudio();
-                  isSpeakingReminderRef.current = true;
-                  setIsSpeakingReminder(true);
-                  speakFocusVoiceReminder(timerSeconds > 0 ? timerSeconds : 25 * 60, () => {
-                    isSpeakingReminderRef.current = false;
-                    setIsSpeakingReminder(false);
-                  });
-                }}
+                onClick={() => focusTimer.testVoiceReminder()}
                 className="px-2.5 py-1 bg-white/15 hover:bg-white/25 active:scale-95 text-amber-300 border border-amber-300/30 font-bold rounded-lg text-[10px] sm:text-[11px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
                 title="বাকি সময় অটো ক্যালকুলেট করে শুনুন এবং টাইমার পজ টেস্ট করুন"
               >

@@ -28,6 +28,8 @@ import { RemindersModal } from './components/RemindersModal';
 import { playAlertChime, playSuccessChime } from './utils/audio';
 import { fireConfetti } from './utils/confetti';
 import { ChecklistGroup, ChecklistItem, DailyRoutineItem, NoteItem } from './types';
+import { Pause, RotateCcw } from 'lucide-react';
+import { focusTimer, FocusTimerState } from './utils/focusTimer';
 import {
   saveUserDataToCloud,
   loadUserDataFromCloud,
@@ -768,6 +770,33 @@ export const App: React.FC = () => {
     playSuccessChime();
   }, [syncToCloud]);
 
+  // Global Pomodoro Focus Timer State synchronized across all menu navigation
+  const [focusTimerState, setFocusTimerState] = useState<FocusTimerState>(() => focusTimer.getState());
+
+  useEffect(() => {
+    focusTimer.setOnComplete((durationMinutes, taskName) => {
+      handleAddTimeEntry({
+        date: getTodayStr(),
+        startTime: new Date().toTimeString().substring(0, 5),
+        durationMinutes,
+        type: 'productive',
+        activity: taskName || 'পমোডোরো ফোকাস সম্পন্ন',
+        category: 'ফোকাস সেশন',
+      });
+    });
+
+    const unsubscribe = focusTimer.subscribe((state) => {
+      setFocusTimerState(state);
+    });
+    return unsubscribe;
+  }, [handleAddTimeEntry]);
+
+  const formatFloatingTimer = (totalSecs: number) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleDeleteTimeEntry = useCallback((id: string) => {
     recordDeletedItemId(id);
     const now = Date.now();
@@ -1097,6 +1126,55 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* Floating Active Focus Timer Bar when navigating across other tabs */}
+      {focusTimerState.active && activeTab !== 'time-analysis' && (
+        <div className="fixed bottom-16 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-md bg-slate-900/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-2xl border border-amber-500/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div
+            onClick={() => setActiveTab('time-analysis')}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer flex-1"
+          >
+            <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0 animate-pulse text-base">
+              ⏱️
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-black text-sm sm:text-base tracking-wider text-amber-300">
+                  {formatFloatingTimer(focusTimerState.seconds)}
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded font-semibold">
+                  চলমান
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 truncate font-medium">
+                {focusTimerState.taskName || 'ডিপ ফোকাস সেশন'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => focusTimer.pause()}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              title="পজ করুন"
+            >
+              <Pause className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => focusTimer.reset()}
+              className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 transition-colors cursor-pointer"
+              title="বন্ধ করুন"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setActiveTab('time-analysis')}
+              className="px-2.5 py-1 rounded-lg bg-[#005B96] hover:bg-[#004b7c] text-white text-xs font-bold transition-colors cursor-pointer"
+            >
+              টাইমারে যান
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Global Modals */}
       <TaskModal

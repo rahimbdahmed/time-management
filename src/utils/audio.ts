@@ -656,11 +656,25 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
   try {
     stopVoice();
 
+    // Helper to resolve audio file path properly in web and Android WebView APK (file://)
+    const getAudioPath = (file: string) => {
+      if (typeof window === 'undefined') return `/audio/${file}`;
+      if (window.location.protocol === 'file:') {
+        const base = window.location.href ? window.location.href.replace(/[^/]*$/, '') : '';
+        return base ? `${base}audio/${file}` : `./audio/${file}`;
+      }
+      return `/audio/${file}`;
+    };
+
+    // If running in local file:/// or Android APK WebView, directly use HTMLAudioElement
+    if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+      fallbackHtmlAudioOrTTS(getAudioPath);
+      return;
+    }
+
     // 1. For exact minute milestones (1-120 mins), attempt playing Pradeep Neural audio via unlocked AudioContext
     if (mins >= 1 && mins <= 120 && secs === 0) {
-      const audioUrl = typeof window !== 'undefined' && window.location.protocol === 'file:'
-        ? `./audio/rem_${mins}.mp3`
-        : `/audio/rem_${mins}.mp3`;
+      const audioUrl = getAudioPath(`rem_${mins}.mp3`);
       const ctx = getAudioContext();
 
       if (ctx) {
@@ -678,7 +692,7 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
             source.start(0);
             safetyTimer = setTimeout(finish, Math.ceil((buffer.duration + 0.5) * 1000));
           } catch (err) {
-            fallbackHtmlAudioOrTTS();
+            fallbackHtmlAudioOrTTS(getAudioPath);
           }
         };
 
@@ -699,23 +713,21 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
             playBuffer(decodedBuf);
           })
           .catch(() => {
-            fallbackHtmlAudioOrTTS();
+            fallbackHtmlAudioOrTTS(getAudioPath);
           });
         return;
       }
     }
 
-    fallbackHtmlAudioOrTTS();
+    fallbackHtmlAudioOrTTS(getAudioPath);
   } catch (e) {
     speakBengaliMale(sentence, finish);
   }
 
-  function fallbackHtmlAudioOrTTS() {
+  function fallbackHtmlAudioOrTTS(getPathFn?: (f: string) => string) {
     if (mins >= 1 && mins <= 120 && secs === 0) {
       try {
-        const audioUrl = typeof window !== 'undefined' && window.location.protocol === 'file:'
-          ? `./audio/rem_${mins}.mp3`
-          : `/audio/rem_${mins}.mp3`;
+        const audioUrl = getPathFn ? getPathFn(`rem_${mins}.mp3`) : `./audio/rem_${mins}.mp3`;
         const audio = new Audio(audioUrl);
         activeHtmlAudio = audio;
 
@@ -731,7 +743,7 @@ export function speakFocusVoiceReminder(remainingSeconds: number, onComplete?: (
           speakBengaliMale(sentence, finish);
         };
 
-        safetyTimer = setTimeout(finish, 6500);
+        safetyTimer = setTimeout(finish, 4000);
 
         const playPromise = audio.play();
         if (playPromise !== undefined) {
